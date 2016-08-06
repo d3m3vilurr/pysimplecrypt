@@ -34,8 +34,8 @@ import random
 import zlib
 import hashlib
 
-__all__ = ['CompressionMode', 'IntegrityProtectionMode', 'Error', 'CryptoFlag',
-           'SimpleCrypt']
+__all__ = ['CompressionMode', 'IntegrityProtectionMode', 'CryptoFlag',
+           'SimpleCryptException', 'SimpleCrypt']
 
 CRC_TABLE = (0x0000, 0x1081, 0x2102, 0x3183,
              0x4204, 0x5285, 0x6306, 0x7387,
@@ -53,13 +53,6 @@ class IntegrityProtectionMode(Enum):
     ProtectionNone = 0
     ProtectionChecksum = 1
     ProtectionHash = 2
-
-
-class Error(IntEnum):
-    ErrorNoError = 0
-    ErrorNoKeySet = 1
-    ErrorUnknownVersion = 2
-    ErrorIntegrityFailed = 3
 
 
 class CryptoFlag(IntEnum):
@@ -100,13 +93,16 @@ def checksum(buf):
     return ~crc & 0xffff
 
 
+class SimpleCryptException(Exception):
+    pass
+
+
 class SimpleCrypt(object):
 
     def __init__(self, key=0):
         self._key = key
         self._compression_mode = CompressionMode.CompressionAuto
         self._protection_mode = IntegrityProtectionMode.ProtectionChecksum
-        self.last_error = Error.ErrorNoError
         self._key_parts = []
         if key:
             self.split_key()
@@ -132,9 +128,7 @@ class SimpleCrypt(object):
                 return b''
 
         if not len(self._key_parts):
-            # no key set
-            self.last_error = 1
-            return b''
+            raise SimpleCryptException('No key set')
         ba = text
         flags = CryptoFlag.CryptoFlagNone.value
 
@@ -174,7 +168,6 @@ class SimpleCrypt(object):
             chr(flags).encode('latin1'),
         ]
 
-        self.last_error = Error.ErrorNoError
         return b''.join(result) + ba
 
     def encrypt_to_string(self, text):
@@ -208,8 +201,7 @@ class SimpleCrypt(object):
 
         # we only work with version 3
         if version != 3:
-            self.last_error = Error.ErrorUnknownVersion
-            return b''
+            raise SimpleCryptException('Invalid version or not a cyphertext')
 
         flags = uint8(ba[1])
 
@@ -232,27 +224,23 @@ class SimpleCrypt(object):
 
         if flags & CryptoFlag.CryptoFlagChecksum:
             if len(ba) < 2:
-                self.last_error = Error.ErrorIntegrityFailed
-                return b''
+                raise SimpleCryptException('Integrity failed')
             stored_checksum = unpack('>H', ba[:2])[0]
             ba = ba[2:]
             integrity_ok = checksum(ba) == stored_checksum
         elif flags & CryptoFlag.CryptoFlagHash:
             if len(ba) < 20:
-                self.lastError = Error.ErrorIntegrityFailed
-                return b''
+                raise SimpleCryptException('Integrity failed')
             stored_hash = be[:20]
             ba = ba[20:]
             integrity_ok = hashlib.sha1(ba).digest() == stored_hash
 
         if not integrity_ok:
-            self.last_error = Error.ErrorIntegrityFailed
-            return b''
+            raise SimpleCryptException('Integrity failed')
 
         if flags & CryptoFlag.CryptoFlagCompression:
             ba = uncompress(ba)
 
-        self.last_error = Error.ErrorNoError
         return ba
 
 if __name__ == '__main__':
