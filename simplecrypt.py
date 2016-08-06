@@ -29,8 +29,9 @@ from enum import Enum, IntEnum
 import base64
 from struct import pack, unpack
 import random
+import zlib
 from PyQt5.QtCore import QByteArray, QCryptographicHash, \
-                         qCompress, qChecksum
+                         qUncompress, qChecksum
 
 __all__ = ['CompressionMode', 'IntegrityProtectionMode', 'Error', 'CryptoFlag',
            'SimpleCrypt']
@@ -60,6 +61,11 @@ class CryptoFlag(IntEnum):
     CryptoFlagCompression = 0x01
     CryptoFlagChecksum = 0x02
     CryptoFlagHash = 0x04
+
+
+def compress(buf):
+    # maximum compression
+    return pack('>I', len(buf)) + zlib.compress(buf, 9)
 
 
 class SimpleCrypt(object):
@@ -100,16 +106,14 @@ class SimpleCrypt(object):
         flags = CryptoFlag.CryptoFlagNone.value
 
         if self._compression_mode == CompressionMode.CompressionAlways:
-            # maximum compression
-            ba = qCompress(QByteArray(ba), 9).data()
+            ba = compress(ba)
             flags |= CryptoFlag.CryptoFlagCompression.value
         elif self._compression_mode == CompressionMode.CompressionAuto:
-            compressed = qCompress(QByteArray(ba), 9)
-            if compressed.count() < len(ba):
-                ba = compressed.data()
-                flags != CryptoFlag.CryptoFlagCompression.value
+            compressed = compress(ba)
+            if len(compressed) < len(ba):
+                ba = compressed
+                flags |= CryptoFlag.CryptoFlagCompression.value
 
-        integrity_protection = QByteArray()
         if self._protection_mode == IntegrityProtectionMode.ProtectionChecksum:
             flags |= CryptoFlag.CryptoFlagChecksum.value
             integrity_protection = pack('>H', qChecksum(ba))
@@ -219,7 +223,12 @@ class SimpleCrypt(object):
         return ba
 
 if __name__ == '__main__':
+    import string
+
     crypto = SimpleCrypt(0x0123456789abcdef)
-    e = crypto.encrypt_to_bytes('abcd')
-    assert(crypto.decrypt_to_string(e) == 'abcd')
+    long_string = ''.join(random.choice(string.ascii_uppercase +
+                                        string.digits)
+                          for _ in range(1000))
+    e = crypto.encrypt_to_bytes(long_string)
+    assert(crypto.decrypt_to_string(e) == long_string)
     assert(crypto.decrypt_to_string('AwLohkauq43K') == 'abcd')
