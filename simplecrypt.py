@@ -88,62 +88,61 @@ class SimpleCrypt(object):
 
     def encrypt_to_bytes(self, text):
         if type(text) == str:
-            text = QByteArray(text.encode('utf-8'))
-        elif type(text) == bytes:
-            text = QByteArray(text)
+            text = text.encode('utf-8')
+        if type(text) != bytes:
+            return b''
 
         if not len(self._key_parts):
             # no key set
             self.last_error = 1
-            return QByteArray()
-
-        ba = QByteArray(text)
+            return b''
+        ba = text
         flags = CryptoFlag.CryptoFlagNone.value
 
         if self._compression_mode == CompressionMode.CompressionAlways:
             # maximum compression
-            ba = qCompress(ba, 9)
+            ba = qCompress(QByteArray(ba), 9).data()
             flags |= CryptoFlag.CryptoFlagCompression.value
         elif self._compression_mode == CompressionMode.CompressionAuto:
-            compressed = qCompress(ba, 9)
-            if (compressed.count() < ba.count()):
-                ba = compressed
+            compressed = qCompress(QByteArray(ba), 9)
+            if compressed.count() < len(ba):
+                ba = compressed.data()
                 flags != CryptoFlag.CryptoFlagCompression.value
 
         integrity_protection = QByteArray()
         if self._protection_mode == IntegrityProtectionMode.ProtectionChecksum:
             flags |= CryptoFlag.CryptoFlagChecksum.value
             s = QDataStream(integrity_protection, QIODevice.WriteOnly)
-            s.writeUInt16(qChecksum(ba.data()))
+            s.writeUInt16(qChecksum(ba))
         elif self._protection_mode == IntegrityProtectionMode.ProtectionHash:
             flags |= CryptoFlag.CryptoFlagHash.value
             qhash = QCryptographicHash(QCryptographicHash.Sha1)
-            qhash.addData(ba)
+            qhash.addData(QByteArray(ba))
             integrity_protection += qhash.result()
+        integrity_protection = integrity_protection.data()
 
         random_char = chr(qrand() & 0xff)
-        ba = QByteArray(random_char.encode('latin1')) + \
-                integrity_protection + ba
+        ba = random_char.encode('latin1') + integrity_protection + ba
 
         pos = 0
         last = 0
 
-        cnt = ba.count()
+        cnt = len(ba)
         while pos < cnt:
-            curr = ord(ba[pos:pos + 1].data())
+            curr = ba[pos]
             new = curr ^ self._key_parts[pos % 8] ^ last
             ba = ba[:pos] + chr(new).encode('latin1') + ba[pos + 1:]
             last = new
             pos += 1
-        result = QByteArray()
-        # version for future updates to algorithm
-        result.append(chr(0x3).encode('latin1'))
-        # encryption flags
-        result.append(chr(flags).encode('latin1'))
-        result.append(ba)
+        result = [
+            # version for future updates to algorithm
+            chr(0x3).encode('latin1'),
+            # encryption flags
+            chr(flags).encode('latin1'),
+        ]
 
         self.last_error = Error.ErrorNoError
-        return result.data()
+        return b''.join(result) + ba
 
     def encrypt_to_string(self, text):
         cypher = self.encrypt_to_bytes(text)
@@ -155,73 +154,73 @@ class SimpleCrypt(object):
 
     def decrypt_to_bytes(self, cypher):
         if type(cypher) == str:
-            cypher = QByteArray.fromBase64(cypher.encode('latin1'))
-        elif type(cypher) == bytes:
-            cypher = QByteArray(cypher)
+            cypher = base64.b64decode(cypher.encode('latin1'))
+        if type(cypher) != bytes:
+            return b''
 
         if not len(self._key_parts):
             # no key set
             self.last_error = 1
-            return QByteArray()
+            return b''
 
-        if cypher.count() < 3:
-            return QByteArray()
+        if len(cypher) < 3:
+            return b''
 
-        ba = QByteArray(cypher)
-
-        version = ord(ba[0:1].data())
+        ba = cypher
+        version = ba[0]
 
         # we only work with version 3
         if version != 3:
             self.last_error = Error.ErrorUnknownVersion
-            return QByteArray();
+            return b''
 
-        flags = ord(ba[1:2].data())
+        flags = ba[1]
 
-        ba = ba.mid(2);
+        ba = ba[2:]
         pos = 0
-        cnt = ba.count()
+        cnt = len(ba)
         last = 0
 
         while pos < cnt:
-            curr = ord(ba[pos:pos + 1].data())
+            curr = ba[pos]
             new = curr ^ last ^ self._key_parts[pos % 8]
             ba = ba[:pos] + chr(new).encode('latin1') + ba[pos + 1:]
             last = curr
             pos += 1
 
         # chop off the random number at the start
-        ba = ba.mid(1)
+        ba = ba[1:]
 
         integrity_ok = True
 
         if flags & CryptoFlag.CryptoFlagChecksum:
-            if ba.length() < 2:
+            if len(ba) < 2:
                 self.last_error = Error.ErrorIntegrityFailed
-                return QByteArray()
-            s = QDataStream(ba, QIODevice.ReadOnly)
+                return b''
+            _ = QByteArray(ba)
+            s = QDataStream(_, QIODevice.ReadOnly)
             stored_checksum = s.readUInt16()
-            ba = ba.mid(2)
-            integrity_ok = qChecksum(ba.data()) == stored_checksum
+            ba = ba[2:]
+            integrity_ok = qChecksum(ba) == stored_checksum
         elif flags & CryptoFlag.CryptoFlagHash:
-            if ba.length() < 20:
+            if len(ba) < 20:
                 self.lastError = Error.ErrorIntegrityFailed
-                return QByteArray()
-            stored_hash = be.left(20)
-            ba = ba.mid(20);
+                return b''
+            stored_hash = be[:20]
+            ba = ba[20:]
             qhash = QCryptographicHash(QCryptographicHash.Sha1)
-            qhash.addData(ba);
+            qhash.addData(QByteArray(ba));
             integrity_ok = (qhash.result() == stored_hash);
 
         if not integrity_ok:
             self.last_error = Error.ErrorIntegrityFailed
-            return QByteArray()
+            return b''
 
         if flags & CryptoFlag.CryptoFlagCompression:
-            ba = qUncompress(ba);
+            ba = qUncompress(QByteArray(ba)).data();
 
         self.last_error = Error.ErrorNoError
-        return ba.data()
+        return ba
 
 if __name__ == '__main__':
     crypto = SimpleCrypt(0x0123456789abcdef)
