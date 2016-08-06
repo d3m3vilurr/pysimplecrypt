@@ -25,6 +25,8 @@
 # ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, OR TORT
 # (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT OF THE USE OF THIS
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+from __future__ import unicode_literals
+import sys
 from enum import Enum, IntEnum
 import base64
 from struct import pack, unpack
@@ -78,9 +80,20 @@ def uncompress(buf):
     ret = zlib.decompress(buf[4:])
     return ret
 
+def uint8(s):
+    if type(s) == str:
+        return ord(s)
+    return s
+
+def byte(s):
+    if str == bytes:
+        return s
+    return s.encode('latin1')
+
 def checksum(buf):
     crc = 0xffff
     for x in buf:
+        x = uint8(x)
         crc = ((crc >> 4) & 0x0fff) ^ CRC_TABLE[((crc ^ x) & 15)]
         x >>= 4
         crc = ((crc >> 4) & 0x0fff) ^ CRC_TABLE[((crc ^ x) & 15)]
@@ -112,10 +125,11 @@ class SimpleCrypt(object):
             self._key_parts.append(part)
 
     def encrypt_to_bytes(self, text):
-        if type(text) == str:
-            text = text.encode('utf-8')
-        if type(text) != bytes:
-            return b''
+        if sys.version_info.major == 3:
+            if type(text) == str:
+                text = text.encode('utf-8')
+            if type(text) != bytes:
+                return b''
 
         if not len(self._key_parts):
             # no key set
@@ -140,7 +154,7 @@ class SimpleCrypt(object):
             flags |= CryptoFlag.CryptoFlagHash.value
             integrity_protection = hashlib.sha1(ba).digest()
 
-        random_char = chr(random.randint(0, 0xff)).encode('latin1')
+        random_char = byte(chr(random.randint(0, 0xff)))
         ba = random_char + integrity_protection + ba
 
         pos = 0
@@ -148,9 +162,9 @@ class SimpleCrypt(object):
 
         cnt = len(ba)
         while pos < cnt:
-            curr = ba[pos]
+            curr = uint8(ba[pos])
             new = curr ^ self._key_parts[pos % 8] ^ last
-            ba = ba[:pos] + chr(new).encode('latin1') + ba[pos + 1:]
+            ba = ba[:pos] + byte(chr(new)) + ba[pos + 1:]
             last = new
             pos += 1
         result = [
@@ -172,8 +186,12 @@ class SimpleCrypt(object):
         return plain.decode('utf-8')
 
     def decrypt_to_bytes(self, cypher):
-        if type(cypher) == str:
-            cypher = base64.b64decode(cypher.encode('latin1'))
+        if sys.version_info.major == 3:
+            if type(cypher) == str:
+                cypher = base64.b64decode(cypher.encode('latin1'))
+        else:
+            if type(cypher) == unicode:
+                cypher = base64.b64decode(cypher.encode('latin1'))
         if type(cypher) != bytes:
             return b''
 
@@ -186,14 +204,14 @@ class SimpleCrypt(object):
             return b''
 
         ba = cypher
-        version = ba[0]
+        version = uint8(ba[0])
 
         # we only work with version 3
         if version != 3:
             self.last_error = Error.ErrorUnknownVersion
             return b''
 
-        flags = ba[1]
+        flags = uint8(ba[1])
 
         ba = ba[2:]
         pos = 0
@@ -201,9 +219,9 @@ class SimpleCrypt(object):
         last = 0
 
         while pos < cnt:
-            curr = ba[pos]
+            curr = uint8(ba[pos])
             new = curr ^ last ^ self._key_parts[pos % 8]
-            ba = ba[:pos] + chr(new).encode('latin1') + ba[pos + 1:]
+            ba = ba[:pos] + byte(chr(new)) + ba[pos + 1:]
             last = curr
             pos += 1
 
