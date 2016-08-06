@@ -28,8 +28,9 @@
 from enum import Enum, IntEnum
 import base64
 from struct import pack, unpack
-from PyQt5.QtCore import QByteArray, QDateTime, QCryptographicHash, \
-                         qsrand, qrand, qCompress, qChecksum
+import random
+from PyQt5.QtCore import QByteArray, QCryptographicHash, \
+                         qCompress, qChecksum
 
 __all__ = ['CompressionMode', 'IntegrityProtectionMode', 'Error', 'CryptoFlag',
            'SimpleCrypt']
@@ -68,7 +69,6 @@ class SimpleCrypt(object):
         self._compression_mode = CompressionMode.CompressionAuto
         self._protection_mode = IntegrityProtectionMode.ProtectionChecksum
         self.last_error = Error.ErrorNoError
-        qsrand(QDateTime.currentMSecsSinceEpoch() & 0xFFFF)
         self._key_parts = []
         if key:
             self.split_key()
@@ -119,8 +119,8 @@ class SimpleCrypt(object):
             qhash.addData(QByteArray(ba))
             integrity_protection = qhash.result().data()
 
-        random_char = chr(qrand() & 0xff)
-        ba = random_char.encode('latin1') + integrity_protection + ba
+        random_char = chr(random.randint(0, 0xff)).encode('latin1')
+        ba = random_char + integrity_protection + ba
 
         pos = 0
         last = 0
