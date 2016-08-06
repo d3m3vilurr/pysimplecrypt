@@ -30,10 +30,15 @@ import base64
 from struct import pack, unpack
 import random
 import zlib
-from PyQt5.QtCore import QByteArray, QCryptographicHash, qChecksum
+from PyQt5.QtCore import QByteArray, QCryptographicHash
 
 __all__ = ['CompressionMode', 'IntegrityProtectionMode', 'Error', 'CryptoFlag',
            'SimpleCrypt']
+
+CRC_TABLE = (0x0000, 0x1081, 0x2102, 0x3183,
+             0x4204, 0x5285, 0x6306, 0x7387,
+             0x8408, 0x9489, 0xa50a, 0xb58b,
+             0xc60c, 0xd68d, 0xe70e, 0xf78f)
 
 
 class CompressionMode(Enum):
@@ -72,6 +77,14 @@ def uncompress(buf):
     expected_size = max(unpack('>I', buf[:4])[0], 1)
     ret = zlib.decompress(buf[4:])
     return ret
+
+def checksum(buf):
+    crc = 0xffff
+    for x in buf:
+        crc = ((crc >> 4) & 0x0fff) ^ CRC_TABLE[((crc ^ x) & 15)]
+        x >>= 4
+        crc = ((crc >> 4) & 0x0fff) ^ CRC_TABLE[((crc ^ x) & 15)]
+    return ~crc & 0xffff
 
 
 class SimpleCrypt(object):
@@ -122,7 +135,7 @@ class SimpleCrypt(object):
 
         if self._protection_mode == IntegrityProtectionMode.ProtectionChecksum:
             flags |= CryptoFlag.CryptoFlagChecksum.value
-            integrity_protection = pack('>H', qChecksum(ba))
+            integrity_protection = pack('>H', checksum(ba))
         elif self._protection_mode == IntegrityProtectionMode.ProtectionHash:
             flags |= CryptoFlag.CryptoFlagHash.value
             qhash = QCryptographicHash(QCryptographicHash.Sha1)
@@ -207,7 +220,7 @@ class SimpleCrypt(object):
                 return b''
             stored_checksum = unpack('>H', ba[:2])[0]
             ba = ba[2:]
-            integrity_ok = qChecksum(ba) == stored_checksum
+            integrity_ok = checksum(ba) == stored_checksum
         elif flags & CryptoFlag.CryptoFlagHash:
             if len(ba) < 20:
                 self.lastError = Error.ErrorIntegrityFailed
