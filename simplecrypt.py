@@ -30,8 +30,7 @@ import base64
 from struct import pack, unpack
 import random
 import zlib
-from PyQt5.QtCore import QByteArray, QCryptographicHash, \
-                         qUncompress, qChecksum
+from PyQt5.QtCore import QByteArray, QCryptographicHash, qChecksum
 
 __all__ = ['CompressionMode', 'IntegrityProtectionMode', 'Error', 'CryptoFlag',
            'SimpleCrypt']
@@ -66,6 +65,13 @@ class CryptoFlag(IntEnum):
 def compress(buf):
     # maximum compression
     return pack('>I', len(buf)) + zlib.compress(buf, 9)
+
+def uncompress(buf):
+    if len(buf) < 4:
+        return b''
+    expected_size = max(unpack('>I', buf[:4])[0], 1)
+    ret = zlib.decompress(buf[4:])
+    return ret
 
 
 class SimpleCrypt(object):
@@ -217,7 +223,7 @@ class SimpleCrypt(object):
             return b''
 
         if flags & CryptoFlag.CryptoFlagCompression:
-            ba = qUncompress(QByteArray(ba)).data();
+            ba = uncompress(ba)
 
         self.last_error = Error.ErrorNoError
         return ba
