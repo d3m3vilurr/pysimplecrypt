@@ -30,7 +30,7 @@ import base64
 from struct import pack, unpack
 import random
 import zlib
-from PyQt5.QtCore import QByteArray, QCryptographicHash
+import hashlib
 
 __all__ = ['CompressionMode', 'IntegrityProtectionMode', 'Error', 'CryptoFlag',
            'SimpleCrypt']
@@ -138,9 +138,7 @@ class SimpleCrypt(object):
             integrity_protection = pack('>H', checksum(ba))
         elif self._protection_mode == IntegrityProtectionMode.ProtectionHash:
             flags |= CryptoFlag.CryptoFlagHash.value
-            qhash = QCryptographicHash(QCryptographicHash.Sha1)
-            qhash.addData(QByteArray(ba))
-            integrity_protection = qhash.result().data()
+            integrity_protection = hashlib.sha1(ba).digest()
 
         random_char = chr(random.randint(0, 0xff)).encode('latin1')
         ba = random_char + integrity_protection + ba
@@ -227,9 +225,7 @@ class SimpleCrypt(object):
                 return b''
             stored_hash = be[:20]
             ba = ba[20:]
-            qhash = QCryptographicHash(QCryptographicHash.Sha1)
-            qhash.addData(QByteArray(ba));
-            integrity_ok = (qhash.result() == stored_hash);
+            integrity_ok = hashlib.sha1(ba).digest() == stored_hash
 
         if not integrity_ok:
             self.last_error = Error.ErrorIntegrityFailed
