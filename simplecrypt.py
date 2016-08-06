@@ -27,8 +27,8 @@
 # SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 from enum import Enum, IntEnum
 import base64
+from struct import pack, unpack
 from PyQt5.QtCore import QByteArray, QDateTime, QCryptographicHash, \
-                         QDataStream, QIODevice, \
                          qsrand, qrand, qCompress, qChecksum
 
 __all__ = ['CompressionMode', 'IntegrityProtectionMode', 'Error', 'CryptoFlag',
@@ -112,14 +112,12 @@ class SimpleCrypt(object):
         integrity_protection = QByteArray()
         if self._protection_mode == IntegrityProtectionMode.ProtectionChecksum:
             flags |= CryptoFlag.CryptoFlagChecksum.value
-            s = QDataStream(integrity_protection, QIODevice.WriteOnly)
-            s.writeUInt16(qChecksum(ba))
+            integrity_protection = pack('>H', qChecksum(ba))
         elif self._protection_mode == IntegrityProtectionMode.ProtectionHash:
             flags |= CryptoFlag.CryptoFlagHash.value
             qhash = QCryptographicHash(QCryptographicHash.Sha1)
             qhash.addData(QByteArray(ba))
-            integrity_protection += qhash.result()
-        integrity_protection = integrity_protection.data()
+            integrity_protection = qhash.result().data()
 
         random_char = chr(qrand() & 0xff)
         ba = random_char.encode('latin1') + integrity_protection + ba
@@ -197,9 +195,7 @@ class SimpleCrypt(object):
             if len(ba) < 2:
                 self.last_error = Error.ErrorIntegrityFailed
                 return b''
-            _ = QByteArray(ba)
-            s = QDataStream(_, QIODevice.ReadOnly)
-            stored_checksum = s.readUInt16()
+            stored_checksum = unpack('>H', ba[:2])[0]
             ba = ba[2:]
             integrity_ok = qChecksum(ba) == stored_checksum
         elif flags & CryptoFlag.CryptoFlagHash:
